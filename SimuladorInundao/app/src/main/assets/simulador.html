@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Simulador de Inundação</title>
+<meta charset="utf-8" />
+<style>
+    html, body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+    }
+
+    #map {
+        height: 90vh;
+    }
+
+    #controls {
+        padding: 10px;
+        text-align: center;
+        background: #f0f0f0;
+    }
+
+    #nivelValue {
+        font-weight: bold;
+    }
+</style>
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+</head>
+<body>
+
+<div id="map"></div>
+
+<div id="controls">
+<label for="nivelSlider">Altitude: <span id="nivelValue">20</span> m</label><br/>
+<input type="range" id="nivelSlider" min="20" max="130" value="20" />
+</div>
+
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
+<script>
+const map = L.map('map').setView([-29.6508864, -50.5794558], 15);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+const nivelSlider = document.getElementById('nivelSlider');
+const nivelValue = document.getElementById('nivelValue');
+let retangulos = [];
+
+let locais = [];
+
+// Carrega os dados CSV uma vez
+const csvText = Android.getCSV();
+
+Papa.parse(csvText, {
+    header: true,
+    skipEmptyLines: true,
+    complete: function(results) {
+        locais = results.data;
+        atualizarMapa(parseFloat(nivelSlider.value));
+    }
+});
+
+// Atualiza os retângulos baseados no nível da água
+function atualizarMapa(nivelAgua) {
+    // Remove os retângulos anteriores
+    retangulos.forEach(r => map.removeLayer(r));
+    retangulos = [];
+
+    locais.forEach(loc => {
+        const lat = parseFloat(loc.Latitude);
+        const lon = parseFloat(loc.Longitude);
+        const alt = parseFloat(loc.Altitude.replace(",", "."));
+
+        if (alt <= nivelAgua) {
+            const rect = L.rectangle([
+                [lat - 0.00005, lon - 0.00005],
+                [lat + 0.00005, lon + 0.00005]
+            ], {
+                color: "blue",
+                weight: 1,
+                fillOpacity: 0.5
+            }).addTo(map);
+            retangulos.push(rect);
+        }
+    });
+}
+
+// Atualiza ao mover o slider
+nivelSlider.addEventListener('input', () => {
+    const valor = parseFloat(nivelSlider.value);
+    nivelValue.textContent = valor;
+    atualizarMapa(valor);
+});
+</script>
+
+</body>
+</html>
