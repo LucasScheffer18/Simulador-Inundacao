@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Simulador de Inundação</title>
+    <meta charset="utf-8" />
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            overflow: hidden;
+            font-family: sans-serif;
+        }
+
+        body {
+            display: flex;
+        }
+
+        #sidebar {
+            width: 250px;
+            margin-top: 60px;
+            background: #f8f8f8;
+            border-right: 1px solid #ccc;
+            padding: 10px;
+            overflow-y: auto;
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            transition: transform 0.3s ease;
+            z-index: 1000;
+        }
+
+        #sidebar.hidden {
+            transform: translateX(-100%);
+        }
+
+        #toggleSidebarBtn {
+            position: absolute;
+            top: 30px;
+            left: 10px;
+            z-index: 1100;
+            background: #fff;
+            border: 1px solid #ccc;
+            padding: 6px 10px;
+            cursor: pointer;
+            border-radius: 5px;
+        }
+
+        .leaflet-top.leaflet-right {
+            top: 30px; /* Aumente esse valor para descer mais */
+        }
+
+        #map {
+            flex-grow: 1;
+            height: 100vh;
+        }
+
+        #controls {
+            position: absolute;
+            bottom: 0;
+            width: 100%;
+            height: 60px;
+            background: #f0f0f0;
+            padding: 10px;
+            text-align: center;
+            z-index: 900;
+        }
+
+        input[type=range] {
+            width: 80%;
+            border-radius: 15px;
+        }
+
+        #nivelValue {
+            font-weight: bold;
+        }
+
+        .historico-item {
+            background: #ddd;
+            padding: 8px;
+            margin: 5px 0;
+            cursor: pointer;
+            border-radius: 5px;
+        }
+
+        #infoAltitude {
+            margin-top: 10px;
+            font-size: 14px;
+            color: #333;
+        }
+    </style>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+</head>
+<body>
+
+<div id="sidebar" class="hidden">
+    <h3>Histórico de Inundações</h3>
+    <div id="historico">
+        <div class="historico-item" onclick="setNivel(35)">Enchente - Maio/2023 (35m)</div>
+        <div class="historico-item" onclick="setNivel(40)">Enchente - Dez/2023 (40m)</div>
+        <div class="historico-item" onclick="setNivel(45)">Enchente - Abril/2024 (45m)</div>
+    </div>
+    <div id="infoAltitude">Clique no mapa para ver a altitude</div>
+</div>
+
+<button id="toggleSidebarBtn">☰</button>
+
+<div id="map"></div>
+
+<div id="controls">
+    <label for="nivelSlider">Altitude: <span id="nivelValue">30</span> m</label><br/>
+    <input type="range" id="nivelSlider" min="30" max="60" step="0.1" value="30" />
+</div>
+
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
+<script>
+    const map = L.map('map', {
+        zoomControl: false
+    }).setView([-29.6508864, -50.5794558], 15);
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+    L.control.zoom({
+        position: 'topright'
+    }).addTo(map);
+
+    const nivelSlider = document.getElementById('nivelSlider');
+    const nivelValue = document.getElementById('nivelValue');
+    const infoAltitude = document.getElementById('infoAltitude');
+    const sidebar = document.getElementById('sidebar');
+    const toggleSidebarBtn = document.getElementById('toggleSidebarBtn');
+
+    let retangulos = [];
+    let locais = [];
+
+    toggleSidebarBtn.addEventListener('click', () => {
+        sidebar.classList.toggle('hidden');
+    });
+
+    const csvText = Android.getCSV();
+
+    Papa.parse(csvText, {
+        header: true,
+        skipEmptyLines: true,
+        complete: function(results) {
+            locais = results.data;
+            atualizarMapa(parseFloat(nivelSlider.value));
+        }
+    });
+
+    function getCorPorAltitude(altitude, maxNivel) {
+        const ratio = maxNivel - altitude;
+        if (ratio < 0.2) return "#2ac3d1";
+        if (ratio < 0.3) return "#c9d91e";
+        if (ratio < 0.7) return "#e89a13";
+        if (ratio < 1.1) return "#e81d13";
+        if (ratio < 3.1) return "#8c3f04";
+        return "#000000";
+    }
+
+    function atualizarMapa(nivelAgua) {
+        retangulos.forEach(r => map.removeLayer(r));
+        retangulos = [];
+
+        locais
+            .filter(loc => parseFloat(loc.Altitude.replace(",", ".")) <= nivelAgua)
+            .forEach(loc => {
+                const lat = parseFloat(loc.Latitude.replace(",", "."));
+                const lng = parseFloat(loc.Longitude.replace(",", "."));
+                const alt = parseFloat(loc.Altitude.replace(",", "."));
+                const cor = getCorPorAltitude(alt, nivelAgua);
+
+                const pixelSize = 0.0002;
+
+                const bounds = [
+                    [lat - pixelSize / 2, lng - pixelSize / 2],
+                    [lat + pixelSize / 2, lng + pixelSize / 2]
+                ];
+
+                const ret = L.rectangle(bounds, {
+                    color: cor,
+                    fillColor: cor,
+                    fillOpacity: 0.3,
+                    weight: 0
+                }).addTo(map);
+
+                retangulos.push(ret);
+            });
+    }
+
+    function setNivel(nivel) {
+        nivelSlider.value = nivel;
+        nivelValue.textContent = nivel;
+        atualizarMapa(nivel);
+
+        // Ocultar a sidebar depois de escolher um histórico
+        sidebar.classList.add('hidden');
+    }
+
+    function getAltitudePorCoordenada(lat, lng) {
+        let pontoMaisProximo = null;
+        let distanciaMin = Infinity;
+
+        locais.forEach(loc => {
+            const locLat = parseFloat(loc.Latitude.replace(",", "."));
+            const locLng = parseFloat(loc.Longitude.replace(",", "."));
+            const distancia = Math.sqrt(Math.pow(locLat - lat, 2) + Math.pow(locLng - lng, 2));
+
+            if (distancia < distanciaMin) {
+                distanciaMin = distancia;
+                pontoMaisProximo = loc;
+            }
+        });
+
+        if (pontoMaisProximo) {
+            return parseFloat(pontoMaisProximo.Altitude.replace(",", ".")).toFixed(2);
+        } else {
+            return null;
+        }
+    }
+
+    nivelSlider.addEventListener('input', () => {
+        const valor = parseFloat(nivelSlider.value);
+        nivelValue.textContent = valor;
+        if ('requestIdleCallback' in window) {
+            requestIdleCallback(() => atualizarMapa(valor));
+        } else {
+            setTimeout(() => atualizarMapa(valor), 0);
+        }
+    });
+
+    map.on('click', function(e) {
+        const lat = e.latlng.lat;
+        const lng = e.latlng.lng;
+
+        const altitude = getAltitudePorCoordenada(lat, lng);
+
+        if (altitude !== null) {
+            infoAltitude.innerHTML = `Latitude: ${lat.toFixed(6)}, Longitude: ${lng.toFixed(6)}<br>Altitude: <strong>${altitude} m</strong>`;
+
+            L.popup()
+                .setLatLng(e.latlng)
+                .setContent(`Altitude aproximada: <strong>${altitude} m</strong>`)
+                .openOn(map);
+        } else {
+            infoAltitude.innerHTML = "Altitude não encontrada para este local.";
+        }
+    });
+</script>
+
+</body>
+</html>
